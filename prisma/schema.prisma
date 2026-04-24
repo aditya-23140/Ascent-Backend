@@ -1,0 +1,187 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String    @id @default(auto()) @map("_id") @db.ObjectId
+  clerkId          String    @unique
+  email            String?
+  name             String?
+  points           Int       @default(0)
+  level            Int       @default(1)
+  timezone         String    @default("UTC")
+  preferences      Json?     // Stores theme, notifications (streakReminderFriday), etc.
+  
+  // New Role & Gamification Fields
+  role             String    @default("standard")  // standard | student | parent
+  dailySpoonBudget Int       @default(12)
+  streakShields    Int       @default(0)
+  currentStreak    Int       @default(0)
+  lastSessionAt    DateTime?
+  
+  // Parent-Child Relations
+  parentId         String?   @db.ObjectId
+  parent           User?     @relation("ChildToParent", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children         User[]    @relation("ChildToParent")
+
+  tasks            Task[]
+  devices          Device[]
+  sessions         Session[]
+  spoonLogs        DailySpoonLog[]
+  rewardTokens     RewardToken?
+  rewardItems      RewardItem[]          // If role is parent
+  redemptionRequests RedemptionRequest[] // If role is student
+  
+  // Gamification & Achievement Relations
+  badges           UserBadge[]
+  levelHistory     UserLevelHistory[]
+  studentLinks     ParentStudentLink[]   @relation("StudentToLink")
+  parentLinks      ParentStudentLink[]   @relation("ParentToLink")
+
+  totalXP          Int       @default(0)
+  avgDurationByPriority Json?
+  preferredBreakDuration Int    @default(5)
+  hyperFocusDuration     Int    @default(45)
+  pomodoroMode     String    @default("flexible")
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model Task {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  title       String
+  description String?
+  priority    String    @default("medium") // low, medium, high
+  status      String    @default("pending") // pending, in_progress, completed
+  deadline    DateTime?
+  completed   Boolean   @default(false)
+  position    Int       @default(0)
+  userId      String    @db.ObjectId
+  user        User      @relation(fields: [userId], references: [id])
+  subtasks    Subtask[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Subtask {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  title          String
+  duration       Int       @default(25) // in minutes
+  actualDuration Int?      // in minutes
+  completed      Boolean   @default(false)
+  completedAt    DateTime?
+  position       Int       @default(0)
+  taskId         String    @db.ObjectId
+  task           Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model Session {
+  id                  String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId              String    @db.ObjectId
+  user                User      @relation(fields: [userId], references: [id])
+  startedAt           DateTime  @default(now())
+  endedAt             DateTime?
+  status              String    // "completed", "interrupted"
+  phase               String    // "work", "break"
+  duration            Int       // in seconds (total elapsed)
+  
+  // New State Machine Fields
+  state               String    @default("IDLE")  // IDLE | FOCUS | HYPERFOCUS | BREAK | DISENGAGED
+  plannedDuration     Int?      // in minutes (from subtask)
+  actualDuration      Int?      // in minutes
+  pomodoroMode        String    @default("flexible")
+  cycleCount          Int       @default(0)
+  longBreakSuggested  Boolean   @default(false)
+  hyperFocusStartedAt DateTime?
+  breakStartedAt      DateTime?
+  disengagedAt        DateTime?
+  overflowMinutes     Int       @default(0)
+}
+
+model DailySpoonLog {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId           String   @db.ObjectId
+  user             User     @relation(fields: [userId], references: [id])
+  date             String   // ISO date YYYY-MM-DD
+  spoonsUsed       Int      @default(0)
+  effortMultiplier Float    @default(1.0)
+  pulsesApplied    String[] // e.g. ["morning", "noon", "evening"]
+  lastUpdatedAt    DateTime @default(now())
+  createdAt        DateTime @default(now())
+  
+  @@unique([userId, date])
+}
+
+model RewardToken {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  studentId       String   @unique @db.ObjectId
+  student         User     @relation(fields: [studentId], references: [id])
+  balance         Int      @default(0)
+  lifetimeEarned  Int      @default(0)
+}
+
+model RewardItem {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  parentId        String   @db.ObjectId
+  parent          User     @relation(fields: [parentId], references: [id])
+  name            String
+  description     String?
+  tokenCost       Int
+  category        String   // screen-time | subscription | learning-tool | custom
+  requests        RedemptionRequest[]
+}
+
+model RedemptionRequest {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  studentId       String   @db.ObjectId
+  student         User     @relation(fields: [studentId], references: [id])
+  rewardItemId    String   @db.ObjectId
+  rewardItem      RewardItem @relation(fields: [rewardItemId], references: [id])
+  status          String   @default("PENDING")  // PENDING | APPROVED | REJECTED
+  requestedAt     DateTime @default(now())
+  resolvedAt      DateTime?
+}
+
+model Device {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id])
+  tokenHash String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+}
+
+model UserBadge {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id])
+  badgeId   String
+  earnedAt  DateTime @default(now())
+  count     Int      @default(1)
+}
+
+model UserLevelHistory {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  user        User     @relation(fields: [userId], references: [id])
+  level       Int
+  achievedAt  DateTime @default(now())
+  xpAtTime    Int
+}
+
+model ParentStudentLink {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  parentId  String   @db.ObjectId
+  parent    User     @relation("ParentToLink", fields: [parentId], references: [id])
+  studentId String   @db.ObjectId
+  student   User     @relation("StudentToLink", fields: [studentId], references: [id])
+  linkedAt  DateTime @default(now())
+}
