@@ -113,14 +113,12 @@ class StreakService {
             // we just prevent it from being reset.
           }
         });
-        console.log(`[StreakService] Shield consumed for user ${user.id}`);
       } else {
         // No shields, reset streak
         await prisma.user.update({
           where: { id: user.id },
           data: { currentStreak: 0 }
         });
-        console.log(`[StreakService] Streak reset for user ${user.id}`);
       }
     }
   }

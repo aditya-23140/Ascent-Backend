@@ -76,8 +76,6 @@ class WebSocketManager {
   }
 
   private handleMessage(userId: string, message: any) {
-    console.log(`Received message from ${userId}:`, message);
-
     switch (message.action) {
       case 'start':
         if (message.duration) {

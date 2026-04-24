@@ -80,7 +80,6 @@ const retryRequest = async <T>(fn: () => Promise<T>, maxRetries = 3, initialDela
 
 // AI Subtask Generation (Must be above /:id and /:taskId/subtasks)
 router.post('/generate-subtasks', async (req: AuthRequest, res, next) => {
-  console.log(`[DEBUG] generate-subtasks for: ${req.body.title}`);
   try {
     const { title, description } = req.body;
 
@@ -170,7 +169,6 @@ router.post('/subtasks/:id/complete', async (req: AuthRequest, res, next) => {
           completed: true
         }
       });
-      console.log(`[TaskService] Task ${parentTask.id} automatically completed.`);
     }
 
     res.json({ success: true, data: { subtask: mapId(subtask) } });
@@ -299,20 +297,15 @@ router.put('/:id', async (req: AuthRequest, res, next) => {
     const { id } = req.params;
     const { subtasks: _, ...data } = updateTaskSchema.parse(req.body);
 
-    console.log(`[DEBUG] Attempting update for task ID: "${id}"`);
-    console.log(`[DEBUG] Current userId from request: "${req.userId}"`);
-
     const task = await prisma.task.findUnique({
       where: { id }
     });
 
     if (!task) {
-      console.warn(`[DEBUG] Task completely missing from DB for ID: ${id}`);
       return res.status(404).json({ error: 'Task not found' });
     }
 
     if (task.userId !== req.userId) {
-      console.warn(`[DEBUG] Ownership mismatch! Task belongs to ${task.userId}, but requester is ${req.userId}`);
       return res.status(403).json({ error: 'Unauthorized' });
     }
 

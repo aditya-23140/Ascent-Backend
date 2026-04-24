@@ -49,9 +49,9 @@ class TimerEngine {
       select: { pomodoroMode: true, role: true, hyperFocusDuration: true }
     });
 
-    // 2. Deduction: Starting a focus session costs 1 spoon
+    // 2. Deduction: Starting a focus session costs 1 spoon (allow overdraft)
     try {
-      await spoonService.deductSpoons(userId, 1);
+      await spoonService.deductSpoons(userId, 1, true);
     } catch (err: any) {
       console.error('[TimerEngine] Spoon deduction failed:', err.message);
       if (err.message === 'NOT_ENOUGH_ENERGY') {
@@ -156,8 +156,8 @@ class TimerEngine {
     state.state = 'HYPERFOCUS';
     
     try {
-      // HyperFocus bonus deduction: -2 spoons on entry
-      await spoonService.deductSpoons(userId, 2);
+      // HyperFocus bonus deduction: -2 spoons on entry (allowed overdraft)
+      await spoonService.deductSpoons(userId, 2, true);
       
       const currentSession = await prisma.session.findFirst({
         where: { userId, status: 'in_progress' },
@@ -222,8 +222,8 @@ class TimerEngine {
 
   private async finalizeWork(userId: string, state: TimerState) {
     try {
-      // Completing a session costs 1 spoon
-      await spoonService.deductSpoons(userId, 1);
+      // Completing a session costs 1 spoon (allowed even if at zero)
+      await spoonService.deductSpoons(userId, 1, true);
 
       const spoonState = await spoonService.getSpoonState(userId);
       
@@ -234,8 +234,8 @@ class TimerEngine {
       // Points: (Planned Minutes * 10) + (Overflow Minutes * 12) * Multiplier
       const pointsEarned = ( (plannedMinutes * 10) + (overflowMinutes * 12) ) * spoonState.effortMultiplier;
       
-      // XP: 1 min FOCUS = 10 XP, HYPERFOCUS = 12 XP / min
-      const xpEarned = (plannedMinutes * 10) + (overflowMinutes * 12);
+      // XP: 1 min FOCUS = 10 XP, HYPERFOCUS = 12 XP / min (Multiplied by effort multiplier)
+      const xpEarned = ((plannedMinutes * 10) + (overflowMinutes * 12)) * spoonState.effortMultiplier;
 
       const currentSession = await prisma.session.findFirst({
         where: { userId, status: 'in_progress' },
@@ -332,8 +332,8 @@ class TimerEngine {
     this.broadcastState(userId);
 
     try {
-      // Disengagement penalty: -1 spoon
-      await spoonService.deductSpoons(userId, 1);
+      // Disengagement penalty: -1 spoon (allowed even if at zero)
+      await spoonService.deductSpoons(userId, 1, true);
     } catch (err) {
       console.error('[TimerEngine] Disengagement penalty failed:', err);
     }

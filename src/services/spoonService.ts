@@ -15,8 +15,9 @@ class SpoonService {
    * Deducts spoons from a user's daily budget.
    * @param userId Internal Prisma User ID
    * @param amount Amount of spoons to deduct
+   * @param allowOverdraft If true, clamp to zero instead of throwing
    */
-  async deductSpoons(userId: string, amount: number): Promise<SpoonState> {
+  async deductSpoons(userId: string, amount: number, allowOverdraft = false): Promise<SpoonState> {
     const today = format(new Date(), 'yyyy-MM-dd');
 
     // 1. Get or Create Daily Log and Apply Pulses
@@ -31,7 +32,7 @@ class SpoonService {
     const budget = user?.dailySpoonBudget || this.DEFAULT_DAILY_BUDGET;
     const remaining = budget - log.spoonsUsed;
 
-    if (remaining < amount && amount > 0) {
+    if (!allowOverdraft && remaining < amount && amount > 0) {
       throw new Error('NOT_ENOUGH_ENERGY');
     }
 
@@ -168,7 +169,6 @@ class SpoonService {
    * Resets spoons for all users. Intended for use by a cron job.
    */
   async resetAllSpoons() {
-    console.log('[SpoonService] Global spoon reset initiated');
     const today = format(new Date(), 'yyyy-MM-dd');
     
     const users = await prisma.user.findMany({ select: { id: true, dailySpoonBudget: true } });
@@ -186,7 +186,6 @@ class SpoonService {
         }
       });
     }
-    console.log(`[SpoonService] Reset complete for ${users.length} users.`);
   }
 }
 
