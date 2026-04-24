@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "ts-node src/index.ts",
     "debug": "ts-node --inspect src/index.ts",
-    "build": "prisma generate && tsc",
+    "build": "npx prisma generate && npx tsc",
     "start": "node --max-old-space-size=450 dist/index.js",
     "type-check": "tsc --noEmit"
   },
