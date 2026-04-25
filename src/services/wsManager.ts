@@ -2,6 +2,10 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { IncomingMessage } from 'http';
 import { Server } from 'http';
 import { timerEngine } from './timerEngine';
+import { prisma } from '../lib/prisma';
+import { levelService } from './levelService';
+import { spoonService } from './spoonService';
+import { streakService } from './streakService';
 
 export interface ExtendedWebSocket extends WebSocket {
   isAlive: boolean;
@@ -92,8 +96,48 @@ class WebSocketManager {
       case 'stop':
         timerEngine.stopTimer(userId);
         break;
+      case 'fetch_dashboard':
+        this.sendDashboard(userId);
+        break;
       default:
         console.warn(`Unknown action: ${message.action}`);
+    }
+  }
+
+  private async sendDashboard(userId: string) {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { points: true, level: true }
+      });
+      const tasks = await prisma.task.findMany({
+        where: { userId },
+        include: { subtasks: { orderBy: { position: 'asc' } } },
+        orderBy: { position: 'asc' }
+      });
+      const spoonState = await spoonService.getSpoonState(userId);
+      const currentStreak = await streakService.calculateCurrentStreak(userId);
+
+      this.broadcastToUser(userId, {
+        type: 'dashboard_update',
+        payload: {
+          stats: {
+            pointsEarned: user?.points || 0,
+            level: user?.level || 1,
+            currentStreak,
+            spoonState
+          },
+          tasks: tasks.map(t => ({
+            _id: t.id,
+            title: t.title,
+            priority: t.priority,
+            progress: 0, // Simplified
+            subtasks: t.subtasks.map(s => ({ title: s.title }))
+          }))
+        }
+      });
+    } catch (err) {
+      console.error('Failed to send dashboard over WS:', err);
     }
   }
 
