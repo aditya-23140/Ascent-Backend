@@ -115,32 +115,75 @@ class WebSocketManager {
     try {
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { points: true, level: true }
+        select: { 
+          points: true, 
+          level: true, 
+          totalXP: true,
+          avgDurationByPriority: true, 
+          preferredBreakDuration: true,
+          hyperFocusDuration: true,
+          dailySpoonBudget: true,
+          pomodoroMode: true
+        }
       });
+
+      // Filter: only active tasks (both status and boolean check)
       const tasks = await prisma.task.findMany({
-        where: { userId },
+        where: { 
+          userId, 
+          completed: false,
+          status: { not: "completed" }
+        },
         include: { subtasks: { orderBy: { position: 'asc' } } },
         orderBy: { position: 'asc' }
       });
+      
       const spoonState = await spoonService.getSpoonState(userId);
       const currentStreak = await streakService.calculateCurrentStreak(userId);
+      const avgs = (user?.avgDurationByPriority as Record<string, number>) || {};
 
       this.broadcastToUser(userId, {
         type: 'dashboard_update',
         payload: {
           stats: {
             pointsEarned: user?.points || 0,
+            totalXP: user?.totalXP || 0,
             level: user?.level || 1,
             currentStreak,
-            spoonState
+            spoonState: {
+              ...spoonState,
+              total: user?.dailySpoonBudget || 12
+            },
+            preferredBreakDuration: user?.preferredBreakDuration || 5,
+            hyperFocusDuration: user?.hyperFocusDuration || 45,
+            pomodoroMode: user?.pomodoroMode || 'flexible',
+            cycleCount: (await prisma.session.findFirst({
+              where: { userId, status: 'completed' },
+              orderBy: { endedAt: 'desc' },
+              select: { cycleCount: true }
+            }))?.cycleCount || 0
           },
-          tasks: tasks.map(t => ({
-            _id: t.id,
-            title: t.title,
-            priority: t.priority,
-            progress: 0, // Simplified
-            subtasks: t.subtasks.map(s => ({ title: s.title }))
-          }))
+          tasks: tasks.map(t => {
+            const priority = t.priority.toUpperCase();
+            
+            // Find first incomplete subtask to get its specific duration
+            const firstPending = t.subtasks.find(s => !s.completed);
+            
+            // Priority: Subtask Duration > Calibrated Average > Default 25
+            const suggestedDuration = firstPending?.duration || avgs[priority] || 25;
+            
+            return {
+              _id: t.id,
+              title: t.title,
+              priority: t.priority,
+              progress: 0, 
+              suggestedDuration,
+              subtasks: t.subtasks.map(s => ({ 
+                title: s.title,
+                completed: s.completed 
+              }))
+            };
+          })
         }
       });
     } catch (err) {
