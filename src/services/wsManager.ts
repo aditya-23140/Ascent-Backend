@@ -15,6 +15,7 @@ export interface ExtendedWebSocket extends WebSocket {
 class WebSocketManager {
   private wss: WebSocketServer | null = null;
   private userSockets: Map<string, Set<ExtendedWebSocket>> = new Map();
+  public pendingPairings: Map<string, ExtendedWebSocket> = new Map();
 
   init(server: Server) {
     this.wss = new WebSocketServer({ noServer: true });
@@ -43,7 +44,7 @@ class WebSocketManager {
       ws.on('message', (data) => {
         try {
           const message = JSON.parse(data.toString());
-          this.handleMessage(userId, message);
+          this.handleMessage(userId, message, ws);
         } catch (e) {
           console.error('Failed to parse WS message:', e);
         }
@@ -79,8 +80,14 @@ class WebSocketManager {
     }
   }
 
-  private handleMessage(userId: string, message: any) {
+  private handleMessage(userId: string, message: any, ws: ExtendedWebSocket) {
     switch (message.action) {
+      case 'pair_init':
+        if (message.code) {
+          this.pendingPairings.set(message.code, ws);
+          console.log(`[Pairing] Registered pending pairing for code: ${message.code}`);
+        }
+        break;
       case 'start':
         if (message.duration) {
           timerEngine.startTimer(userId, message.duration, message.taskId);
@@ -139,6 +146,19 @@ class WebSocketManager {
     } catch (err) {
       console.error('Failed to send dashboard over WS:', err);
     }
+  }
+
+  completePairing(code: string, deviceToken: string) {
+    const ws = this.pendingPairings.get(code);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'pair_success',
+        payload: { deviceToken }
+      }));
+      this.pendingPairings.delete(code);
+      return true;
+    }
+    return false;
   }
 
   broadcastToUser(userId: string, message: any) {

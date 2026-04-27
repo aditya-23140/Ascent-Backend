@@ -132,32 +132,39 @@ router.patch('/profile', async (req: AuthRequest, res, next) => {
   }
 });
 
-// POST /api/user/device — generate a permanent device token (run once, burn into ESP32)
-router.post('/device', async (req: AuthRequest, res, next) => {
+// POST /api/user/device/pair — generate a permanent device token and link via WS code
+router.post('/device/pair', async (req: AuthRequest, res, next) => {
   try {
-    const { name } = req.body;
+    const { code, name } = req.body;
 
-    // Generate a 40-char hex token (similar to GitHub PATs)
+    // We must lazily import wsManager here to avoid circular dependency issues if any
+    const { wsManager } = await import('../services/wsManager');
+
+    if (!code || !wsManager.pendingPairings.has(code)) {
+      return res.status(400).json({ error: 'Invalid or expired pairing code. Please generate a new code on your device.' });
+    }
+
+    // Generate a 40-char hex token
     const plainToken = 'ascent_esp_' + crypto.randomBytes(20).toString('hex');
-
-    // Store only the hash — the plain token is shown ONCE
     const tokenHash = await bcrypt.hash(plainToken, 10);
 
     const device = await prisma.device.create({
       data: {
         userId: req.userId!,
         tokenHash,
-        name: name || 'ESP32 Focus Hub',
+        name: name || 'FocusOS Hub',
       },
     });
 
+    // Notify the device over WebSockets
+    const success = wsManager.completePairing(code, plainToken);
+
     res.json({
       success: true,
-      message: 'Copy this token into your ESP32 sketch. It will NOT be shown again.',
+      message: success ? 'Device paired successfully!' : 'Device saved, but WS notification failed.',
       data: {
         id: device.id,
         name: device.name,
-        token: plainToken,   // <-- one-time display
         createdAt: device.createdAt,
       },
     });

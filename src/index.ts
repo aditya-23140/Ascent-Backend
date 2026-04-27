@@ -43,10 +43,28 @@ httpServer.on('upgrade', async (request, socket, head) => {
   try {
     const url = new URL(request.url || '', `http://${request.headers.host || 'localhost'}`);
     const token = url.searchParams.get('token');
+    const deviceToken = url.searchParams.get('deviceToken');
+
+    if (deviceToken) {
+      const result = await verifyUserToken(deviceToken);
+      if (!result) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      wsManager.handleUpgrade(request, socket, head, result.userId);
+      return;
+    }
 
     if (!token) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
+      return;
+    }
+
+    if (token === 'default_user') {
+      // Allow unauthenticated socket specifically for pairing
+      wsManager.handleUpgrade(request, socket, head, 'unauthenticated_device');
       return;
     }
 
