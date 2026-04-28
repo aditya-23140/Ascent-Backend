@@ -103,11 +103,49 @@ class WebSocketManager {
       case 'stop':
         timerEngine.stopTimer(userId);
         break;
+      case 'complete_subtask':
+        if (message.subtaskId) {
+          this.handleCompleteSubtask(userId, message.subtaskId);
+        }
+        break;
       case 'fetch_dashboard':
         this.sendDashboard(userId);
         break;
       default:
         console.warn(`Unknown action: ${message.action}`);
+    }
+  }
+
+  private async handleCompleteSubtask(userId: string, subtaskId: string) {
+    try {
+      const subtask = await prisma.subtask.update({
+        where: { id: subtaskId },
+        data: {
+          completed: true,
+          completedAt: new Date()
+        }
+      });
+
+      // Award XP
+      await levelService.addXp(userId, 50);
+
+      // Check if task is complete
+      const parentTask = await prisma.task.findUnique({
+        where: { id: subtask.taskId },
+        include: { subtasks: true }
+      });
+
+      if (parentTask && parentTask.subtasks.every(s => s.completed)) {
+        await prisma.task.update({
+          where: { id: parentTask.id },
+          data: { status: 'completed', completed: true }
+        });
+      }
+
+      // Sync back to all user devices
+      await this.sendDashboard(userId);
+    } catch (err) {
+      console.error('Failed to complete subtask over WS:', err);
     }
   }
 
@@ -179,6 +217,7 @@ class WebSocketManager {
               progress: 0, 
               suggestedDuration,
               subtasks: t.subtasks.map(s => ({ 
+                _id: s.id,
                 title: s.title,
                 completed: s.completed 
               }))
