@@ -244,6 +244,10 @@ router.post('/parent/add-dependent', async (req: AuthRequest, res, next) => {
       return res.status(400).json({ error: 'You cannot add yourself as a dependent' });
     }
 
+    if (student.parentId) {
+      return res.status(400).json({ error: 'This user is already a dependent of another guardian' });
+    }
+
     // Check if already linked
     const existingLink = await prisma.parentStudentLink.findFirst({
       where: {
@@ -335,6 +339,15 @@ router.post('/student/accept-request', async (req: AuthRequest, res, next) => {
 
     if (!link || link.studentId !== req.userId) {
       return res.status(404).json({ error: 'Request not found' });
+    }
+
+    const currentUser = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { parentId: true }
+    });
+
+    if (currentUser?.parentId) {
+      return res.status(400).json({ error: 'You already have a guardian. Please remove your current guardian before accepting a new one.' });
     }
 
     await prisma.$transaction([
