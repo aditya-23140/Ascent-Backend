@@ -10,6 +10,8 @@ export type TimerStateName = 'IDLE' | 'FOCUS' | 'HYPERFOCUS' | 'BREAK' | 'DISENG
 export interface TimerState {
   userId: string;
   taskId?: string;
+  subtaskId?: string;
+  subtaskTitle?: string;
   state: TimerStateName;
   secondsElapsed: number;
   plannedSeconds: number;
@@ -40,7 +42,7 @@ class TimerEngine {
     return this.VALID_TRANSITIONS[current].includes(next);
   }
 
-  async startTimer(userId: string, durationMinutes: number, taskId?: string) {
+  async startTimer(userId: string, durationMinutes: number, taskId?: string, subtaskId?: string, subtaskTitle?: string) {
     this.cleanup(userId);
 
     // 1. Fetch user preferences
@@ -74,6 +76,8 @@ class TimerEngine {
     const state: TimerState = {
       userId,
       taskId,
+      subtaskId,
+      subtaskTitle,
       state: 'FOCUS',
       secondsElapsed: 0,
       plannedSeconds: durationSeconds,
@@ -173,6 +177,9 @@ class TimerEngine {
           }
         });
       }
+      
+      // Push fresh stats to all clients (web + device) immediately
+      await wsManager.sendDashboard(userId);
     } catch (err) {
       console.error('[TimerEngine] HyperFocus entry failed:', err);
     }
@@ -402,6 +409,8 @@ class TimerEngine {
         secondsElapsed: state.secondsElapsed,
         plannedSeconds: state.plannedSeconds,
         taskId: state.taskId,
+        subtaskId: state.subtaskId,
+        subtaskTitle: state.subtaskTitle,
         isRunning: !!state.interval
       } : { state: 'IDLE', remainingSeconds: 0, secondsElapsed: 0, plannedSeconds: 0, isRunning: false }
     };

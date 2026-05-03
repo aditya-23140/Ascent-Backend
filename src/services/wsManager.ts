@@ -102,7 +102,13 @@ class WebSocketManager {
         break;
       case 'start':
         if (message.duration) {
-          timerEngine.startTimer(userId, message.duration, message.taskId);
+          timerEngine.startTimer(
+            userId, 
+            message.duration, 
+            message.taskId, 
+            message.subtaskId, 
+            message.subtaskTitle
+          );
         }
         break;
       case 'pause':
@@ -161,7 +167,7 @@ class WebSocketManager {
     }
   }
 
-  private async sendDashboard(userId: string) {
+  public async sendDashboard(userId: string) {
     try {
       const user = await prisma.user.findUnique({
         where: { id: userId },

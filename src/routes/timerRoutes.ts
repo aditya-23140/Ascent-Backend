@@ -7,7 +7,9 @@ const router = Router();
 
 const startSchema = z.object({
   duration: z.number().int().positive(),
-  taskId: z.string().optional()
+  taskId: z.string().optional(),
+  subtaskId: z.string().optional(),
+  subtaskTitle: z.string().optional()
 });
 
 const breakSchema = z.object({
@@ -18,8 +20,8 @@ router.use(authMiddleware);
 
 router.post('/start', (req: AuthRequest, res, next) => {
   try {
-    const { duration, taskId } = startSchema.parse(req.body);
-    timerEngine.startTimer(req.userId!, duration, taskId);
+    const { duration, taskId, subtaskId, subtaskTitle } = startSchema.parse(req.body);
+    timerEngine.startTimer(req.userId!, duration, taskId, subtaskId, subtaskTitle);
     res.json({ message: 'Timer started', state: timerEngine.getTimerState(req.userId!) });
   } catch (error) {
     next(error);
