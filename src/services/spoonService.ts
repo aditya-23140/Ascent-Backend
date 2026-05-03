@@ -18,16 +18,17 @@ class SpoonService {
    * @param allowOverdraft If true, clamp to zero instead of throwing
    */
   async deductSpoons(userId: string, amount: number, allowOverdraft = false): Promise<SpoonState> {
-    const today = format(new Date(), 'yyyy-MM-dd');
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { dailySpoonBudget: true, timezone: true }
+    });
+    
+    const tz = user?.timezone || 'Asia/Kolkata';
+    const { today, hour } = this.getLocalTime(tz);
 
     // 1. Get or Create Daily Log and Apply Pulses
     let log = await this.getOrCreateLog(userId, today);
-    log = await this.applyPulses(userId, log);
-
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { dailySpoonBudget: true }
-    });
+    log = await this.applyPulses(userId, log, hour);
 
     const budget = user?.dailySpoonBudget || this.DEFAULT_DAILY_BUDGET;
     const remaining = budget - log.spoonsUsed;
@@ -70,6 +71,47 @@ class SpoonService {
     };
   }
 
+  private getLocalTime(timezone: string) {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    const parts = formatter.formatToParts(new Date());
+    const getPart = (type: string) => parts.find(p => p.type === type)?.value;
+    
+    return {
+      today: `${getPart('year')}-${getPart('month')}-${getPart('day')}`,
+      hour: parseInt(getPart('hour') || '0', 10)
+    };
+  }
+
+  async getSpoonState(userId: string): Promise<SpoonState> {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { dailySpoonBudget: true, timezone: true }
+    });
+    
+    const tz = user?.timezone || 'Asia/Kolkata'; // Default to user's local timezone
+    const { today, hour } = this.getLocalTime(tz);
+    
+    let log = await this.getOrCreateLog(userId, today);
+    log = await this.applyPulses(userId, log, hour);
+
+    const budget = user?.dailySpoonBudget || this.DEFAULT_DAILY_BUDGET;
+    const remaining = budget - log.spoonsUsed;
+
+    return {
+      spoonsUsed: log.spoonsUsed,
+      remainingSpoons: remaining,
+      effortMultiplier: log.effortMultiplier,
+      isHighEffort: remaining >= 8
+    };
+  }
+
   private async getOrCreateLog(userId: string, today: string) {
     let log = await prisma.dailySpoonLog.findUnique({
       where: { userId_date: { userId, date: today } }
@@ -89,9 +131,7 @@ class SpoonService {
     return log;
   }
 
-  private async applyPulses(userId: string, log: any) {
-    const now = new Date();
-    const hour = now.getHours();
+  private async applyPulses(userId: string, log: any, hour: number) {
     const applied = new Set<string>(log.pulsesApplied || []);
     let spoonsToRecover = 0;
     let resetToZero = false;
@@ -139,30 +179,6 @@ class SpoonService {
     }
 
     return log;
-  }
-
-  /**
-   * Gets the current spoon state for a user.
-   */
-  async getSpoonState(userId: string): Promise<SpoonState> {
-    const today = format(new Date(), 'yyyy-MM-dd');
-    let log = await this.getOrCreateLog(userId, today);
-    log = await this.applyPulses(userId, log);
-
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { dailySpoonBudget: true }
-    });
-
-    const budget = user?.dailySpoonBudget || this.DEFAULT_DAILY_BUDGET;
-    const remaining = budget - log.spoonsUsed;
-
-    return {
-      spoonsUsed: log.spoonsUsed,
-      remainingSpoons: remaining,
-      effortMultiplier: log.effortMultiplier,
-      isHighEffort: remaining >= 8
-    };
   }
 
   /**

@@ -363,11 +363,11 @@ class TimerEngine {
     }
   }
 
-  stopTimer(userId: string) {
+  async stopTimer(userId: string) {
     const state = this.activeTimers.get(userId);
     if (state) {
       if (state.state === 'FOCUS' || state.state === 'HYPERFOCUS') {
-        this.finalizeWork(userId, state);
+        await this.finalizeWork(userId, state);
       }
       this.cleanup(userId);
     }

@@ -119,7 +119,7 @@ class WebSocketManager {
         break;
       case 'skip':
       case 'stop':
-        timerEngine.stopTimer(userId);
+        timerEngine.stopTimer(userId); // intentionally floating if we don't await, or we could make handleMessage async
         break;
       case 'complete_subtask':
         if (message.subtaskId) {
@@ -161,7 +161,7 @@ class WebSocketManager {
       }
 
       // Stop the running timer since the subtask is done
-      timerEngine.stopTimer(userId);
+      await timerEngine.stopTimer(userId);
 
       // Sync back to all user devices
       await this.sendDashboard(userId);

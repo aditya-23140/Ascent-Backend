@@ -174,7 +174,7 @@ router.post('/subtasks/:id/complete', async (req: AuthRequest, res, next) => {
     }
 
     // Stop the running timer since the subtask is done
-    timerEngine.stopTimer(req.userId!);
+    await timerEngine.stopTimer(req.userId!);
     
     // Sync back to all user devices
     await wsManager.sendDashboard(req.userId!);
