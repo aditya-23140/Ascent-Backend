@@ -19,6 +19,7 @@ model User {
   
   // New Role & Gamification Fields
   role             String    @default("standard")  // standard | student | parent
+  onboarded        Boolean   @default(false)
   dailySpoonBudget Int       @default(12)
   streakShields    Int       @default(0)
   currentStreak    Int       @default(0)
@@ -183,5 +184,6 @@ model ParentStudentLink {
   parent    User     @relation("ParentToLink", fields: [parentId], references: [id])
   studentId String   @db.ObjectId
   student   User     @relation("StudentToLink", fields: [studentId], references: [id])
+  status    String   @default("PENDING") // PENDING | ACCEPTED
   linkedAt  DateTime @default(now())
 }

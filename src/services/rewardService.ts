@@ -24,7 +24,7 @@ class RewardService {
   }
 
   /**
-   * Processes a redemption request.
+   * Processes a redemption request using User.points.
    */
   async requestRedemption(studentId: string, rewardItemId: string) {
     const reward = await prisma.rewardItem.findUnique({
@@ -33,19 +33,19 @@ class RewardService {
 
     if (!reward) throw new Error('Reward item not found');
 
-    const wallet = await prisma.rewardToken.findUnique({
-      where: { studentId }
+    const user = await prisma.user.findUnique({
+      where: { id: studentId }
     });
 
-    if (!wallet || wallet.balance < reward.tokenCost) {
-      throw new Error('Insufficient tokens');
+    if (!user || user.points < reward.tokenCost) {
+      throw new Error('Insufficient points');
     }
 
-    // Deduct tokens and create request
+    // Deduct points and create request
     await prisma.$transaction([
-      prisma.rewardToken.update({
-        where: { studentId },
-        data: { balance: { decrement: reward.tokenCost } }
+      prisma.user.update({
+        where: { id: studentId },
+        data: { points: { decrement: reward.tokenCost } }
       }),
       prisma.redemptionRequest.create({
         data: {
@@ -78,11 +78,11 @@ class RewardService {
         }
       });
     } else {
-      // Refund tokens if rejected
+      // Refund points if rejected
       await prisma.$transaction([
-        prisma.rewardToken.update({
-          where: { studentId: request.studentId },
-          data: { balance: { increment: request.rewardItem.tokenCost } }
+        prisma.user.update({
+          where: { id: request.studentId },
+          data: { points: { increment: request.rewardItem.tokenCost } }
         }),
         prisma.redemptionRequest.update({
           where: { id: requestId },

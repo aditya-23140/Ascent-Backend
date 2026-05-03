@@ -1,12 +1,13 @@
-import { verifyToken } from '@clerk/express';
+import { verifyToken, createClerkClient } from '@clerk/express';
 import { prisma } from '../lib/prisma';
 import bcrypt from 'bcryptjs';
+
+const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
 
 export async function verifyUserToken(token: string): Promise<{ userId: string; isHardware: boolean } | null> {
   try {
     // 1. Try Clerk Auth (Web)
     try {
-      // Use the verifyToken utility for manual JWT verification
       const decoded = await verifyToken(token, {
         secretKey: process.env.CLERK_SECRET_KEY
       });
@@ -16,10 +17,29 @@ export async function verifyUserToken(token: string): Promise<{ userId: string; 
           where: { clerkId: decoded.sub }
         });
 
-        if (!user) {
-          user = await prisma.user.create({
-            data: { clerkId: decoded.sub }
-          });
+        // If user doesn't exist or is missing email, fetch from Clerk
+        if (!user || !user.email) {
+          const clerkUser = await clerkClient.users.getUser(decoded.sub);
+          const email = clerkUser.emailAddresses[0]?.emailAddress;
+          const name = `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() || clerkUser.username;
+
+          if (!user) {
+            user = await prisma.user.create({
+              data: { 
+                clerkId: decoded.sub,
+                email: email,
+                name: name
+              }
+            });
+          } else {
+            user = await prisma.user.update({
+              where: { clerkId: decoded.sub },
+              data: { 
+                email: email,
+                name: name
+              }
+            });
+          }
         }
 
         return { userId: user.id, isHardware: false };

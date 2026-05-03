@@ -120,6 +120,7 @@ router.patch('/profile', async (req: AuthRequest, res, next) => {
       data: {
         timezone,
         role,
+        onboarded: role ? true : undefined,
         dailySpoonBudget: dailySpoonBudget ? parseInt(dailySpoonBudget) : undefined,
         hyperFocusDuration: hyperFocusDuration ? parseInt(hyperFocusDuration) : undefined,
         preferences: preferences ? preferences : undefined
@@ -196,6 +197,161 @@ router.delete('/device/:id', async (req: AuthRequest, res, next) => {
     }
     await prisma.device.delete({ where: { id: req.params.id } });
     res.json({ success: true, message: 'Device token revoked' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PATCH /api/user/role — set the initial role for a new user
+router.patch('/role', async (req: AuthRequest, res, next) => {
+  try {
+    const { role } = req.body;
+    if (!['standard', 'parent'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role' });
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: req.userId },
+      data: { 
+        role,
+        onboarded: true
+      }
+    });
+
+    res.json({ success: true, data: mapId(updated) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// --- Guardian (Parent) Routes ---
+
+// POST /api/user/parent/add-dependent — invite a dependent by email
+router.post('/parent/add-dependent', async (req: AuthRequest, res, next) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+
+    const student = await prisma.user.findFirst({
+      where: { email }
+    });
+
+    if (!student) {
+      return res.status(404).json({ error: 'User with this email not found' });
+    }
+
+    if (student.id === req.userId) {
+      return res.status(400).json({ error: 'You cannot add yourself as a dependent' });
+    }
+
+    // Check if already linked
+    const existingLink = await prisma.parentStudentLink.findFirst({
+      where: {
+        parentId: req.userId,
+        studentId: student.id
+      }
+    });
+
+    if (existingLink) {
+      return res.status(400).json({ error: 'This user is already a dependent or has a pending request' });
+    }
+
+    const link = await prisma.parentStudentLink.create({
+      data: {
+        parentId: req.userId!,
+        studentId: student.id,
+        status: 'PENDING'
+      }
+    });
+
+    res.json({ success: true, data: link });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// DELETE /api/user/parent/remove-dependent/:studentId — remove a dependent
+router.delete('/parent/remove-dependent/:studentId', async (req: AuthRequest, res, next) => {
+  try {
+    const { studentId } = req.params;
+
+    const link = await prisma.parentStudentLink.findFirst({
+      where: {
+        parentId: req.userId,
+        studentId: studentId
+      }
+    });
+
+    if (!link) {
+      return res.status(404).json({ error: 'Relationship not found' });
+    }
+
+    await prisma.$transaction([
+      prisma.parentStudentLink.delete({ where: { id: link.id } }),
+      prisma.user.update({
+        where: { id: studentId },
+        data: { parentId: null } // Remove parentId if it was accepted
+      })
+    ]);
+
+    res.json({ success: true, message: 'Dependent removed' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// --- Dependent (Student) Routes ---
+
+// GET /api/user/student/requests — get pending guardian requests
+router.get('/student/requests', async (req: AuthRequest, res, next) => {
+  try {
+    const requests = await prisma.parentStudentLink.findMany({
+      where: {
+        studentId: req.userId,
+        status: 'PENDING'
+      },
+      include: {
+        parent: {
+          select: { id: true, name: true, email: true }
+        }
+      }
+    });
+
+    res.json({ success: true, data: requests });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/user/student/accept-request — accept a guardian request
+router.post('/student/accept-request', async (req: AuthRequest, res, next) => {
+  try {
+    const { linkId } = req.body;
+    if (!linkId) return res.status(400).json({ error: 'LinkId is required' });
+
+    const link = await prisma.parentStudentLink.findUnique({
+      where: { id: linkId }
+    });
+
+    if (!link || link.studentId !== req.userId) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+
+    await prisma.$transaction([
+      prisma.parentStudentLink.update({
+        where: { id: linkId },
+        data: { status: 'ACCEPTED' }
+      }),
+      prisma.user.update({
+        where: { id: req.userId },
+        data: {
+          parentId: link.parentId,
+          role: 'student' // Change role to student upon acceptance
+        }
+      })
+    ]);
+
+    res.json({ success: true, message: 'Guardian request accepted' });
   } catch (error) {
     next(error);
   }

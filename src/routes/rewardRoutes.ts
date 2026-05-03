@@ -13,10 +13,11 @@ router.use(authMiddleware);
 // GET /api/rewards/tokens
 router.get('/tokens', async (req: AuthRequest, res, next) => {
   try {
-    const tokens = await prisma.rewardToken.findUnique({
-      where: { studentId: req.userId }
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { points: true }
     });
-    res.json({ success: true, data: tokens || { balance: 0, lifetimeEarned: 0 } });
+    res.json({ success: true, data: { balance: user?.points || 0 } });
   } catch (err) {
     next(err);
   }
@@ -84,7 +85,7 @@ router.get('/parent/dashboard', checkParent, async (req: AuthRequest, res, next)
       id: child.id,
       name: child.name || 'Student',
       email: child.email || '',
-      tokens: child.rewardTokens?.balance || 0,
+      tokens: child.points, // Use points as the token balance
       points: child.points,
       currentStreak: child.currentStreak,
       spoonsRemaining: 12 - (child.spoonLogs[0]?.spoonsUsed || 0)
