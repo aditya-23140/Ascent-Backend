@@ -89,7 +89,7 @@ class WebSocketManager {
     }
   }
 
-  private handleMessage(userId: string, message: any, ws: ExtendedWebSocket) {
+  private async handleMessage(userId: string, message: any, ws: ExtendedWebSocket) {
     switch (message.action) {
       case 'pair_init':
         if (message.code) {
@@ -119,7 +119,8 @@ class WebSocketManager {
         break;
       case 'skip':
       case 'stop':
-        timerEngine.stopTimer(userId); // intentionally floating if we don't await, or we could make handleMessage async
+        await timerEngine.stopTimer(userId);
+        await this.sendDashboard(userId);
         break;
       case 'complete_subtask':
         if (message.subtaskId) {

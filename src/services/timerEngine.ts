@@ -302,6 +302,9 @@ class TimerEngine {
       if (user?.role === 'student') {
         await rewardService.awardTokens(userId, xpEarned);
       }
+      
+      // Auto-sync stats (Spoons, Points, XP) immediately after finalizing session
+      await wsManager.sendDashboard(userId);
     } catch (err) {
       console.error('[TimerEngine] Finalization failed:', err);
     }
