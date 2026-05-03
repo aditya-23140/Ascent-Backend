@@ -15,7 +15,7 @@ export interface ExtendedWebSocket extends WebSocket {
 class WebSocketManager {
   private wss: WebSocketServer | null = null;
   private userSockets: Map<string, Set<ExtendedWebSocket>> = new Map();
-  public pendingPairings: Map<string, ExtendedWebSocket> = new Map();
+  public pendingPairings: Map<string, { ws: ExtendedWebSocket; expiresAt: number }> = new Map();
 
   init(server: Server) {
     this.wss = new WebSocketServer({ noServer: true });
@@ -51,9 +51,18 @@ class WebSocketManager {
       });
     });
 
-    // Heartbeat interval (30s)
+    // Heartbeat and Cleanup interval (30s)
     const interval = setInterval(() => {
       if (!this.wss) return;
+
+      const now = Date.now();
+      // Prune expired pairing codes
+      for (const [code, entry] of this.pendingPairings.entries()) {
+        if (now > entry.expiresAt) {
+          this.pendingPairings.delete(code);
+        }
+      }
+
       this.wss.clients.forEach((ws: WebSocket) => {
         const extWs = ws as ExtendedWebSocket;
         if (extWs.isAlive === false) {
@@ -84,8 +93,11 @@ class WebSocketManager {
     switch (message.action) {
       case 'pair_init':
         if (message.code) {
-          this.pendingPairings.set(message.code, ws);
-          console.log(`[Pairing] Registered pending pairing for code: ${message.code}`);
+          this.pendingPairings.set(message.code, { 
+            ws, 
+            expiresAt: Date.now() + 5 * 60 * 1000 // 5 minute TTL
+          });
+          console.log(`[Pairing] Registered pending pairing for code: ${message.code} (expires in 5m)`);
         }
         break;
       case 'start':
@@ -231,7 +243,15 @@ class WebSocketManager {
   }
 
   completePairing(code: string, deviceToken: string) {
-    const ws = this.pendingPairings.get(code);
+    const entry = this.pendingPairings.get(code);
+    if (!entry) return false;
+
+    if (Date.now() > entry.expiresAt) {
+      this.pendingPairings.delete(code);
+      return false;
+    }
+
+    const { ws } = entry;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: 'pair_success',
