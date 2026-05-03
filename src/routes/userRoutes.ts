@@ -157,7 +157,7 @@ router.post('/device/pair', async (req: AuthRequest, res, next) => {
     });
 
     // Notify the device over WebSockets
-    const success = wsManager.completePairing(code, plainToken);
+    const success = wsManager.completePairing(code, plainToken, req.userId!);
 
     res.json({
       success: true,

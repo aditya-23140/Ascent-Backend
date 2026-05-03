@@ -68,6 +68,13 @@ httpServer.on('upgrade', async (request, socket, head) => {
       return;
     }
 
+    const deviceId = url.searchParams.get('deviceId');
+    if (deviceId) {
+      // Allow unauthenticated device connection for pairing (no token yet)
+      wsManager.handleUpgrade(request, socket, head, `device:${deviceId}`);
+      return;
+    }
+
     const result = await verifyUserToken(token);
     if (!result) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');

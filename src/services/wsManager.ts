@@ -90,6 +90,14 @@ class WebSocketManager {
   }
 
   private async handleMessage(userId: string, message: any, ws: ExtendedWebSocket) {
+    // Unauthenticated device sockets (pairing lobby) may only send pair_init.
+    // Block all other actions to prevent unauthorized access to user data.
+    const isUnauthed = userId.startsWith('device:') || userId === 'unauthenticated_device';
+    if (isUnauthed && message.action !== 'pair_init') {
+      console.warn(`[WS] Blocked action '${message.action}' from unauthenticated device ${userId}`);
+      return;
+    }
+
     switch (message.action) {
       case 'pair_init':
         if (message.code) {
@@ -97,7 +105,7 @@ class WebSocketManager {
             ws, 
             expiresAt: Date.now() + 5 * 60 * 1000 // 5 minute TTL
           });
-          console.log(`[Pairing] Registered pending pairing for code: ${message.code} (expires in 5m)`);
+          console.log(`[Pairing] Registered pending pairing for code: ${message.code}, deviceId: ${userId} (expires in 5m)`);
         }
         break;
       case 'start':
@@ -252,7 +260,7 @@ class WebSocketManager {
     }
   }
 
-  completePairing(code: string, deviceToken: string) {
+  completePairing(code: string, deviceToken: string, userId: string) {
     const entry = this.pendingPairings.get(code);
     if (!entry) return false;
 
@@ -265,7 +273,7 @@ class WebSocketManager {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: 'pair_success',
-        payload: { deviceToken }
+        payload: { deviceToken, userId }
       }));
       this.pendingPairings.delete(code);
       return true;
