@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { GoogleGenAI } from '@google/genai';
 import { levelService } from '../services/levelService';
 import { Subtask } from '../types';
+import { wsManager } from '../services/wsManager';
+import { timerEngine } from '../services/timerEngine';
 
 const router = Router();
 router.use(authMiddleware);
@@ -170,6 +172,12 @@ router.post('/subtasks/:id/complete', async (req: AuthRequest, res, next) => {
         }
       });
     }
+
+    // Stop the running timer since the subtask is done
+    timerEngine.stopTimer(req.userId!);
+    
+    // Sync back to all user devices
+    await wsManager.sendDashboard(req.userId!);
 
     res.json({ success: true, data: { subtask: mapId(subtask) } });
   } catch (err) {

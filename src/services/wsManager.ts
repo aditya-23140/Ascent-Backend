@@ -160,6 +160,9 @@ class WebSocketManager {
         });
       }
 
+      // Stop the running timer since the subtask is done
+      timerEngine.stopTimer(userId);
+
       // Sync back to all user devices
       await this.sendDashboard(userId);
     } catch (err) {
