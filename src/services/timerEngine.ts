@@ -106,6 +106,12 @@ class TimerEngine {
       console.error('[TimerEngine] Failed to create session:', err);
     }
 
+    // Defensive: If another async startTimer call overlapped and created an interval, clear it.
+    const existing = this.activeTimers.get(userId);
+    if (existing && existing.interval) {
+        clearInterval(existing.interval);
+    }
+
     state.interval = setInterval(() => this.tick(userId), 1000);
     this.activeTimers.set(userId, state);
     this.broadcastState(userId);
