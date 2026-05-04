@@ -110,7 +110,7 @@ class WebSocketManager {
         break;
       case 'start':
         if (message.duration) {
-          timerEngine.startTimer(
+          await timerEngine.startTimer(
             userId, 
             message.duration, 
             message.taskId, 

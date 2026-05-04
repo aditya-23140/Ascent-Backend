@@ -43,6 +43,13 @@ class TimerEngine {
   }
 
   async startTimer(userId: string, durationMinutes: number, taskId?: string, subtaskId?: string, subtaskTitle?: string) {
+    // Guard: if a timer is already running for this user, ignore duplicate start
+    const existing = this.activeTimers.get(userId);
+    if (existing && existing.interval) {
+      console.log(`[TimerEngine] Timer already active for ${userId}, ignoring duplicate start.`);
+      return;
+    }
+
     this.cleanup(userId);
 
     // 1. Fetch user preferences
@@ -106,11 +113,7 @@ class TimerEngine {
       console.error('[TimerEngine] Failed to create session:', err);
     }
 
-    // Defensive: If another async startTimer call overlapped and created an interval, clear it.
-    const existing = this.activeTimers.get(userId);
-    if (existing && existing.interval) {
-        clearInterval(existing.interval);
-    }
+    // Note: The guard at the top of startTimer prevents duplicate intervals.
 
     state.interval = setInterval(() => this.tick(userId), 1000);
     this.activeTimers.set(userId, state);
@@ -360,6 +363,7 @@ class TimerEngine {
     if (state && state.interval) {
       clearInterval(state.interval);
       state.interval = undefined;
+      state.state = 'DISENGAGED';  // Explicit state change so broadcast is unambiguous
       this.broadcastState(userId);
     }
   }
@@ -367,6 +371,12 @@ class TimerEngine {
   resumeTimer(userId: string) {
     const state = this.activeTimers.get(userId);
     if (state && !state.interval) {
+      // Restore to FOCUS (or HYPERFOCUS if past planned)
+      if (state.secondsElapsed >= state.plannedSeconds) {
+        state.state = 'HYPERFOCUS';
+      } else {
+        state.state = 'FOCUS';
+      }
       state.interval = setInterval(() => this.tick(userId), 1000);
       this.broadcastState(userId);
     }
