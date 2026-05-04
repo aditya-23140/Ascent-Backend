@@ -5,7 +5,7 @@ import { rewardService } from './rewardService';
 import { levelService } from './levelService';
 import { streakService } from './streakService';
 
-export type TimerStateName = 'IDLE' | 'FOCUS' | 'HYPERFOCUS' | 'BREAK' | 'DISENGAGED';
+export type TimerStateName = 'IDLE' | 'FOCUS' | 'HYPERFOCUS' | 'BREAK';
 
 export interface TimerState {
   userId: string;
@@ -31,10 +31,9 @@ class TimerEngine {
 
   private VALID_TRANSITIONS: Record<TimerStateName | 'COMPLETED', (TimerStateName | 'COMPLETED')[]> = {
     'IDLE': ['FOCUS'],
-    'FOCUS': ['HYPERFOCUS', 'BREAK', 'DISENGAGED', 'COMPLETED', 'IDLE'],
-    'HYPERFOCUS': ['BREAK', 'DISENGAGED', 'COMPLETED', 'IDLE'],
+    'FOCUS': ['HYPERFOCUS', 'BREAK', 'COMPLETED', 'IDLE'],
+    'HYPERFOCUS': ['BREAK', 'COMPLETED', 'IDLE'],
     'BREAK': ['FOCUS', 'IDLE'],
-    'DISENGAGED': ['FOCUS', 'IDLE'],
     'COMPLETED': ['IDLE']
   };
 
@@ -152,11 +151,6 @@ class TimerEngine {
         this.stopTick(userId);
         this.startIdleTimer(userId);
       }
-    } else if (state.state === 'DISENGAGED') {
-      // "progress slowly decreases"
-      if (state.secondsElapsed > 0) {
-        state.secondsElapsed = Math.max(0, state.secondsElapsed - 1);
-      }
     }
 
     this.broadcastState(userId);
@@ -207,8 +201,7 @@ class TimerEngine {
       state.state = 'BREAK';
       state.remainingSeconds = breakDuration;
       state.plannedSeconds = breakDuration; // For consistency
-      // We keep secondsElapsed as is for disengaged decay later if needed, 
-      // but the break timer is driven by remainingSeconds.
+      // Reset elapsed time for break countdown
       
       if (!state.interval) {
         state.interval = setInterval(() => this.tick(userId), 1000);
@@ -319,7 +312,7 @@ class TimerEngine {
     }
   }
 
-  private startIdleTimer(userId: string, targetState: TimerStateName = 'DISENGAGED', seconds: number = 30) {
+  private startIdleTimer(userId: string, targetState: TimerStateName = 'IDLE', seconds: number = 30) {
     this.clearIdleTimer(userId);
     const state = this.activeTimers.get(userId);
     if (!state) return;
@@ -328,7 +321,9 @@ class TimerEngine {
       if (targetState === 'HYPERFOCUS') {
         await this.enterHyperFocus(userId);
       } else {
-        await this.enterDisengaged(userId);
+        // After break idle timeout, just go to IDLE
+        this.cleanup(userId);
+        this.broadcastState(userId, 'IDLE');
       }
     }, seconds * 1000);
   }
@@ -338,32 +333,13 @@ class TimerEngine {
     await this.enterHyperFocus(userId);
   }
 
-  private async enterDisengaged(userId: string) {
-    const state = this.activeTimers.get(userId);
-    if (!state) return;
-
-    state.state = 'DISENGAGED';
-    // Restart interval for decay if it was stopped
-    if (!state.interval) {
-        state.interval = setInterval(() => this.tick(userId), 1000);
-    }
-    
-    this.broadcastState(userId);
-
-    try {
-      // Disengagement penalty: -1 spoon (allowed even if at zero)
-      await spoonService.deductSpoons(userId, 1, true);
-    } catch (err) {
-      console.error('[TimerEngine] Disengagement penalty failed:', err);
-    }
-  }
 
   pauseTimer(userId: string) {
     const state = this.activeTimers.get(userId);
     if (state && state.interval) {
       clearInterval(state.interval);
       state.interval = undefined;
-      state.state = 'DISENGAGED';  // Explicit state change so broadcast is unambiguous
+      // Keep current state (FOCUS/HYPERFOCUS) — just stop ticking
       this.broadcastState(userId);
     }
   }
